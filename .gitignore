@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+# C extensions
+*.so
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+eggs/
+*.egg-info/
+.env
+
+# Editor directories and files
+.idea/  # For PyCharm/IntelliJ
+.vscode/ # For VS Code (if you want to ignore workspace settings)
+*.swp
+*~
+.DS_Store # macOS files
+
+# FastAPI/Uvicorn specific
+.fastapicloudignore # If using FastAPI Cloud
+.openapi-codegen/ # Generated client code directory, if any
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+
+# Logs and databases
+*.log
+*.sqlite
+*.sqlite3
+
+# Uploaded files/media (if stored locally)
+media/
+uploads/
