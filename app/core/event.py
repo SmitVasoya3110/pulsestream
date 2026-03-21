@@ -10,6 +10,8 @@ class Event:
     type: str
     payload: Any
     timestamp: float
+    enqueued_at: float = 0
+    processed_at: float = 0
     
     @staticmethod
     def create(event_type: str, payload: Any):
@@ -17,6 +19,6 @@ class Event:
             id=str(uuid.uuid4()),
             type=event_type,
             payload=payload,
-            timestamp=time.time()
+            timestamp=time.perf_counter()
         )
 

@@ -19,3 +19,11 @@ async def test():
     await produce_test_event()
         
     return {"Status": "event sent"}
+
+@app.get("/load")
+async def load_test():
+    
+    for _ in range(1000):
+        await produce_test_event()
+        
+    return {"status": "sent 1000 events"}
