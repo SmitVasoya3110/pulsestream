@@ -4,9 +4,10 @@ import asyncio
 from app.core.engine import start_engine
 from app.producers.producer import produce_test_event
 from app.consumers.consumer import register_consumer
-
+from app.websocket.routes import router as ws_router
 
 app = FastAPI()
+app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup():
