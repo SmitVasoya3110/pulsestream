@@ -1,4 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import json
+
 from .manager import ConnectionManager
 
 router = APIRouter()
@@ -12,7 +14,17 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            await websocket.receive_text()  # keep alive
+        
+            data = await websocket.receive_text()  # keep alive
+            message = json.loads(data)
 
+            action = message.get("action")
+            topic = message.get("topic")
+            
+            if action == "subscribe":
+                manager.subscribe(websocket, topic)
+            elif action == "unsubscribe":
+                manager.unsubscribe(websocket, topic)
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket)

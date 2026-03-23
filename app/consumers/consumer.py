@@ -9,7 +9,9 @@ async def price_handler(event: Event):
         {
             'type': event.type,
             "data": event.payload
-        }
+        },
+        topic=event.type
+        
     )
 
 def register_consumer():

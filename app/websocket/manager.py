@@ -25,10 +25,25 @@ class ConnectionManager:
                 self.clients.remove(client)
                 break
 
-    async def broadcast(self, message: dict):
+    def subscribe(self, websocket:WebSocket, topic:str):
+        print("[SUBSCRIBE] ", websocket, topic)
+        for client in self.clients:
+            if client.websocket == websocket:
+                client.topics.add(topic)
+                break
+    
+    def unsubscribe(self, websocket: WebSocket, topic: str):
+        for client in self.clients:
+            if client.websocket == websocket:
+                client.topics.discard(topic)
+                break
+    
+    async def broadcast(self, message: dict, topic: str):
         dead_clients = []
         
         for client in self.clients:
+            if topic not in client.topics:
+                continue
             try:
                 client.queue.put_nowait(message)
             except asyncio.QueueFull:

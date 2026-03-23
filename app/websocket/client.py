@@ -9,7 +9,7 @@ class ClientConnection:
         self.queue = asyncio.Queue(maxsize=100)
         self.task = None
         self.active = True
-        
+        self.topics = set()
     
     async def sender(self):
         try:
