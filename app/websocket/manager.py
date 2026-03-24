@@ -2,6 +2,7 @@ from fastapi import WebSocket
 from typing import List
 import asyncio
 
+from app.core.topics import Topic
 from app.websocket.client import ClientConnection
 
 

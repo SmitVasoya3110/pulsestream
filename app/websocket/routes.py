@@ -2,6 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
 
 from .manager import ConnectionManager
+from app.core.topics import Topic
 
 router = APIRouter()
 manager = ConnectionManager()
@@ -16,15 +17,39 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
         
             data = await websocket.receive_text()  # keep alive
-            message = json.loads(data)
+
+            try:
+                message = json.loads(data)
+            except Exception:
+                await websocket.send_json({"error": "invalid_json"})
+                continue
 
             action = message.get("action")
             topic = message.get("topic")
-            
+
+ 
+            if action not in ["subscribe", "unsubscribe"]:
+                await websocket.send_json({"error": "invalid_action"})
+                continue
+
+
+            if topic not in Topic._value2member_map_:
+                await websocket.send_json({"error": "invalid_topic"})
+                continue
+
             if action == "subscribe":
                 manager.subscribe(websocket, topic)
+                await websocket.send_json({
+                    "status": "subscribed",
+                    "topic": topic
+                })
+
             elif action == "unsubscribe":
                 manager.unsubscribe(websocket, topic)
+                await websocket.send_json({
+                    "status": "unsubscribed",
+                    "topic": topic
+                })
                 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
