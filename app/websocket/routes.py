@@ -54,12 +54,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
             elif action == "reply":
                 limit = message.get("limit", 10)
-                events = event_bus.store.get_events(topic, limit)
+                offset = message.get("offset")
+
+                if offset is not None:
+                    events = event_bus.store.get_events_after(topic, offset)
+                else:
+                    events = event_bus.store.get_events(topic, limit)
 
                 for event in events:
                     await websocket.send_json({
                         "type": event.type,
                         "data": event.payload,
+                        "offset": event.offset,
                         "reply": True
                     })
 

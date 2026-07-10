@@ -10,6 +10,7 @@ class Event:
     type: str
     payload: Any
     timestamp: float
+    offset:int = 0
     enqueued_at: float = 0
     processed_at: float = 0
     
