@@ -39,3 +39,5 @@ eggs/
 # Uploaded files/media (if stored locally)
 media/
 uploads/
+.idea
+.idea/*

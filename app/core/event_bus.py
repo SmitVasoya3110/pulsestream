@@ -2,6 +2,7 @@ import asyncio
 import time
 from typing import Callable, Dict, List
 from .event import Event
+from app.core.event_store import EventStore
 
 class EventBus:
     
@@ -10,8 +11,11 @@ class EventBus:
         self.processed = 0
         self.start_time = time.perf_counter()
         self.subscribers: Dict[str, List[Callable]] = {}
+        self.store = EventStore()
         
     async def publish(self, event: Event):
+        self.store.append(event)
+
         start = time.perf_counter()
         event.enqueued_at = start
         await self.queue.put(event)
@@ -35,9 +39,13 @@ class EventBus:
             print(f"[QUEUE WAIT] {queue_wait:.3f} ms")
             
             handlers = self.subscribers.get(event.type, [])
-            
-            for handler in handlers:
-                asyncio.create_task(self._execute(handler,event))
+
+            await asyncio.gather(
+                *(
+                    self._execute(handler, event)
+                    for handler in handlers
+                )
+            )
                 
                 
     async def _execute(self, handler, event):

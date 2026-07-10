@@ -23,6 +23,10 @@ class ConnectionManager:
         for client in self.clients:
             if client.websocket == websocket:
                 client.active = False
+
+                if client.task:
+                    client.task.cancel()
+
                 self.clients.remove(client)
                 break
 

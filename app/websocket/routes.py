@@ -3,6 +3,7 @@ import json
 
 from .manager import ConnectionManager
 from app.core.topics import Topic
+from app.core.engine import event_bus
 
 router = APIRouter()
 manager = ConnectionManager()
@@ -50,6 +51,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     "status": "unsubscribed",
                     "topic": topic
                 })
-                
+
+            elif action == "reply":
+                limit = message.get("limit", 10)
+                events = event_bus.store.get_events(topic, limit)
+
+                for event in events:
+                    await websocket.send_json({
+                        "type": event.type,
+                        "data": event.payload,
+                        "reply": True
+                    })
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
