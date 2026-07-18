@@ -8,7 +8,8 @@ async def price_handler(event: Event):
     await manager.broadcast(
         {
             'type': event.type,
-            "data": event.payload
+            "data": event.payload,
+            "offset": event.offset
         },
         topic=event.type
         

@@ -29,7 +29,7 @@ async def websocket_endpoint(websocket: WebSocket):
             topic = message.get("topic")
 
  
-            if action not in ["subscribe", "unsubscribe"]:
+            if action not in ["subscribe", "unsubscribe", "replay"]:
                 await websocket.send_json({"error": "invalid_action"})
                 continue
 
@@ -52,7 +52,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "topic": topic
                 })
 
-            elif action == "reply":
+            elif action == "replay":
                 limit = message.get("limit", 10)
                 offset = message.get("offset")
 
@@ -66,7 +66,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "type": event.type,
                         "data": event.payload,
                         "offset": event.offset,
-                        "reply": True
+                        "replay": True
                     })
 
     except WebSocketDisconnect:
