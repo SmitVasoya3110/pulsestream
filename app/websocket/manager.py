@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from fastapi import WebSocket
 from typing import List
 import asyncio
@@ -10,6 +12,8 @@ class ConnectionManager:
 
     def __init__(self):
         self.clients: List[ClientConnection] = []
+        self.group_index = defaultdict(int)
+
         
 
     async def connect(self, websocket: WebSocket):
@@ -30,11 +34,12 @@ class ConnectionManager:
                 self.clients.remove(client)
                 break
 
-    def subscribe(self, websocket:WebSocket, topic:str):
-        print("[SUBSCRIBE] ", websocket, topic)
+    def subscribe(self, websocket:WebSocket, topic:str, group:str):
+        print("[SUBSCRIBE] ", websocket, topic, group)
         for client in self.clients:
             if client.websocket == websocket:
                 client.topics.add(topic)
+                client.groups[topic] = group
                 break
     
     def unsubscribe(self, websocket: WebSocket, topic: str):
@@ -44,16 +49,25 @@ class ConnectionManager:
                 break
     
     async def broadcast(self, message: dict, topic: str):
-        dead_clients = []
-        
+        group_map = {}
+        selected = None
         for client in self.clients:
             if topic not in client.topics:
                 continue
+
+            client_group = client.groups.get(topic, "default")
+            group_map.setdefault(client_group, []).append(client)
+
+        for group_name, clients in group_map.items():
+            idx = self.group_index[group_name] % len(clients)
+            selected = clients[idx]
+            print(selected)
+            self.group_index[group_name] += 1
+
             try:
-                client.queue.put_nowait(message)
+                selected.queue.put_nowait(message)
             except asyncio.QueueFull:
-                dead_clients.append(client)
-                
-        for client in dead_clients:
-            client.active = False
-            self.clients.remove(client)
+                selected.active = False
+                self.clients.remove(selected)
+            except Exception as e:
+                print(e)

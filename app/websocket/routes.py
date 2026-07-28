@@ -27,6 +27,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             action = message.get("action")
             topic = message.get("topic")
+            group = message.get("group", "default")
 
  
             if action not in ["subscribe", "unsubscribe", "replay"]:
@@ -39,7 +40,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if action == "subscribe":
-                manager.subscribe(websocket, topic)
+                manager.subscribe(websocket, topic, group)
                 await websocket.send_json({
                     "status": "subscribed",
                     "topic": topic

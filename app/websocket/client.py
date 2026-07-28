@@ -10,6 +10,7 @@ class ClientConnection:
         self.task = None
         self.active = True
         self.topics = set()
+        self.groups = {}
     
     async def sender(self):
         try:
