@@ -61,7 +61,10 @@ class ConnectionManager:
         for group_name, clients in group_map.items():
             idx = self.group_index[group_name] % len(clients)
             selected = clients[idx]
-            print(selected)
+            print(
+                f"[GROUP={group_name}] "
+                f"selected client={selected.websocket.client}"
+            )
             self.group_index[group_name] += 1
 
             try:
