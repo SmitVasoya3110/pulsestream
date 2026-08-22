@@ -1,0 +1,10 @@
+"""Layer 6.5 / 7 timing and retry knobs."""
+
+# 6.5.6–6.5.8 Heartbeat
+HEARTBEAT_TIMEOUT_SEC = 30.0
+HEARTBEAT_CHECK_INTERVAL_SEC = 5.0
+
+# Layer 7 ACK / retry
+ACK_TIMEOUT_SEC = 5.0
+ACK_CHECK_INTERVAL_SEC = 1.0
+MAX_DELIVERY_RETRIES = 3

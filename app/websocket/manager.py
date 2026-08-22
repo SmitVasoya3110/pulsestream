@@ -1,76 +1,121 @@
 from collections import defaultdict
-
-from fastapi import WebSocket
 from typing import List
 import asyncio
 
-from app.core.topics import Topic
+from fastapi import WebSocket
+
 from app.websocket.client import ClientConnection
+from app.coordinator.consumer import Consumer, ConsumerState
+from app.coordinator.coordinator import coordinator
+from app.coordinator.delivery import delivery_tracker
 
 
 class ConnectionManager:
 
     def __init__(self):
-        self.clients: List[ClientConnection] = []
+        self.consumers: List[Consumer] = []
+        # (topic, group) -> round-robin index
         self.group_index = defaultdict(int)
-
-        
+        coordinator.set_rebalance_handler(self.on_rebalance)
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        client = ClientConnection(websocket)
-        self.clients.append(client)
-        
-        client.task = asyncio.create_task(client.sender())
+        connection = ClientConnection(websocket)
+        consumer = Consumer(connection=connection)
 
-    def disconnect(self, websocket: WebSocket):
-        for client in self.clients:
-            if client.websocket == websocket:
-                client.active = False
+        self.consumers.append(consumer)
+        connection.task = asyncio.create_task(connection.sender())
+        coordinator.register(consumer)
 
-                if client.task:
-                    client.task.cancel()
+        print(
+            f"[CONSUMER CONNECTED] "
+            f"id={consumer.id} "
+            f"connection={id(consumer.connection)} "
+            f"websocket={id(consumer.connection.websocket)}"
+        )
+        return consumer
 
-                self.clients.remove(client)
-                break
+    def disconnect(self, consumer: Consumer):
+        connection = consumer.connection
+        connection.active = False
 
-    def subscribe(self, websocket:WebSocket, topic:str, group:str):
-        print("[SUBSCRIBE] ", websocket, topic, group)
-        for client in self.clients:
-            if client.websocket == websocket:
-                client.topics.add(topic)
-                client.groups[topic] = group
-                break
-    
-    def unsubscribe(self, websocket: WebSocket, topic: str):
-        for client in self.clients:
-            if client.websocket == websocket:
-                client.topics.discard(topic)
-                break
-    
+        if connection.task:
+            connection.task.cancel()
+
+        if consumer in self.consumers:
+            self.consumers.remove(consumer)
+
+        coordinator.unregister(consumer.id)
+
+    def on_rebalance(self, topic: str, group: str, members: List[str]):
+        """6.5.9 — reset routing cursor and notify remaining members."""
+        self.group_index[(topic, group)] = 0
+
+        notice = {
+            "type": "rebalance",
+            "topic": topic,
+            "group": group,
+            "members": members,
+        }
+
+        for consumer_id in members:
+            consumer = coordinator.get(consumer_id)
+            if consumer is None or consumer.state != ConsumerState.ACTIVE:
+                continue
+            try:
+                consumer.connection.queue.put_nowait(notice)
+            except asyncio.QueueFull:
+                print(
+                    f"[REBALANCE NOTICE DROPPED] "
+                    f"consumer={consumer_id}"
+                )
+
     async def broadcast(self, message: dict, topic: str):
         group_map = {}
-        selected = None
-        for client in self.clients:
-            if topic not in client.topics:
+
+        for consumer in coordinator.consumers.values():
+            if consumer.state != ConsumerState.ACTIVE:
                 continue
 
-            client_group = client.groups.get(topic, "default")
-            group_map.setdefault(client_group, []).append(client)
+            if topic not in consumer.topics:
+                continue
 
-        for group_name, clients in group_map.items():
-            idx = self.group_index[group_name] % len(clients)
-            selected = clients[idx]
-            print(
-                f"[GROUP={group_name}] "
-                f"selected client={selected.websocket.client}"
+            group = consumer.groups.get(topic, "default")
+            group_map.setdefault(group, []).append(consumer)
+
+        for group, consumers in group_map.items():
+            if not consumers:
+                continue
+
+            key = (topic, group)
+            idx = self.group_index[key] % len(consumers)
+            selected = consumers[idx]
+            self.group_index[key] += 1
+
+            delivery_id = delivery_tracker.track(
+                selected.id,
+                topic,
+                message,
             )
-            self.group_index[group_name] += 1
+            payload = delivery_tracker.pending[delivery_id].message
+
+            print(
+                f"[ROUTE] "
+                f"topic={topic} "
+                f"group={group} "
+                f"consumer={selected.id} "
+                f"delivery={delivery_id}"
+            )
 
             try:
-                selected.queue.put_nowait(message)
+                selected.connection.queue.put_nowait(payload)
             except asyncio.QueueFull:
-                selected.active = False
-                self.clients.remove(selected)
+                selected.state = ConsumerState.DEAD
+                selected.connection.active = False
+                if selected.connection.task:
+                    selected.connection.task.cancel()
+                if selected in self.consumers:
+                    self.consumers.remove(selected)
+                coordinator.unregister(selected.id)
             except Exception as e:
                 print(e)

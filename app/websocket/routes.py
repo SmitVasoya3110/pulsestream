@@ -1,9 +1,13 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
+import time
 
 from .manager import ConnectionManager
 from app.core.topics import Topic
 from app.core.engine import event_bus
+from app.coordinator.coordinator import coordinator
+from app.coordinator.delivery import delivery_tracker
+
 
 router = APIRouter()
 manager = ConnectionManager()
@@ -12,12 +16,13 @@ manager = ConnectionManager()
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
 
-    await manager.connect(websocket)
+    consumer = await manager.connect(websocket)
 
     try:
         while True:
-        
-            data = await websocket.receive_text()  # keep alive
+
+            data = await websocket.receive_text()
+            coordinator.touch(consumer.id)
 
             try:
                 message = json.loads(data)
@@ -26,31 +31,69 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             action = message.get("action")
+
+            # 6.5.6 — explicit heartbeat (any message also touches)
+            if action == "heartbeat":
+                await websocket.send_json({
+                    "status": "ok",
+                    "action": "heartbeat",
+                    "consumer_id": consumer.id,
+                })
+                continue
+
+            # Layer 7 — acknowledge a delivery
+            if action == "ack":
+                delivery_id = message.get("delivery_id")
+                if not delivery_id:
+                    await websocket.send_json({
+                        "error": "missing_delivery_id"
+                    })
+                    continue
+
+                ok = delivery_tracker.ack(
+                    delivery_id,
+                    consumer_id=consumer.id,
+                )
+                await websocket.send_json({
+                    "status": "acked" if ok else "unknown_delivery",
+                    "delivery_id": delivery_id,
+                })
+                continue
+
             topic = message.get("topic")
             group = message.get("group", "default")
 
- 
             if action not in ["subscribe", "unsubscribe", "replay"]:
                 await websocket.send_json({"error": "invalid_action"})
                 continue
-
 
             if topic not in Topic._value2member_map_:
                 await websocket.send_json({"error": "invalid_topic"})
                 continue
 
             if action == "subscribe":
-                manager.subscribe(websocket, topic, group)
+                print(
+                    f"[SUBSCRIBE REQUEST] "
+                    f"consumer={consumer.id} "
+                    f"topic={topic} "
+                    f"group={group}"
+                )
+
+                coordinator.subscribe(consumer.id, topic, group)
                 await websocket.send_json({
                     "status": "subscribed",
-                    "topic": topic
+                    "topic": topic,
+                    "group": group,
                 })
 
             elif action == "unsubscribe":
-                manager.unsubscribe(websocket, topic)
+                coordinator.unsubscribe(
+                    consumer.id,
+                    topic,
+                )
                 await websocket.send_json({
                     "status": "unsubscribed",
-                    "topic": topic
+                    "topic": topic,
                 })
 
             elif action == "replay":
@@ -67,8 +110,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "type": event.type,
                         "data": event.payload,
                         "offset": event.offset,
-                        "replay": True
+                        "replay": True,
                     })
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(consumer)
