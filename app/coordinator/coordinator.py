@@ -120,7 +120,8 @@ class ConsumerCoordinator:
         consumer.groups.clear()
         consumer.state = ConsumerState.DEAD
 
-        delivery_tracker.clear_consumer(consumer_id)
+        # Issue 1 — preserve pending; rebalance will reassign (Issue 2/3)
+        delivery_tracker.release_consumer(consumer_id)
 
         print(
             f"[UNREGISTER] "
@@ -129,6 +130,14 @@ class ConsumerCoordinator:
 
         for topic, group in affected:
             self._rebalance(topic, group)
+
+    def active_group_members(self, topic: str, group: str) -> List[str]:
+        members = []
+        for consumer_id in self.groups[topic][group]:
+            consumer = self.consumers.get(consumer_id)
+            if consumer is not None and consumer.state == ConsumerState.ACTIVE:
+                members.append(consumer_id)
+        return sorted(members)
 
     def _rebalance(self, topic: str, group: str):
         """6.5.9 — membership changed; notify routing layer."""

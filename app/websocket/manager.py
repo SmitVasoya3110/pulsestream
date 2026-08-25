@@ -48,7 +48,7 @@ class ConnectionManager:
         coordinator.unregister(consumer.id)
 
     def on_rebalance(self, topic: str, group: str, members: List[str]):
-        """6.5.9 — reset routing cursor and notify remaining members."""
+        """6.5.9 — reset routing + reassign orphaned pending deliveries."""
         self.group_index[(topic, group)] = 0
 
         notice = {
@@ -68,6 +68,24 @@ class ConnectionManager:
                 print(
                     f"[REBALANCE NOTICE DROPPED] "
                     f"consumer={consumer_id}"
+                )
+
+        # Issue 2/3 — move preserved pending to remaining members
+        reassigned = delivery_tracker.reassign_orphans(
+            topic,
+            group,
+            members,
+        )
+        for pending in reassigned:
+            consumer = coordinator.get(pending.consumer_id)
+            if consumer is None or consumer.state != ConsumerState.ACTIVE:
+                continue
+            try:
+                consumer.connection.queue.put_nowait(pending.message)
+            except asyncio.QueueFull:
+                print(
+                    f"[REASSIGN ENQUEUE FAILED] "
+                    f"consumer={pending.consumer_id}"
                 )
 
     async def broadcast(self, message: dict, topic: str):
@@ -95,8 +113,13 @@ class ConnectionManager:
             delivery_id = delivery_tracker.track(
                 selected.id,
                 topic,
+                group,
                 message,
             )
+            if delivery_id is None:
+                # Already processed for this group (idempotent skip)
+                continue
+
             payload = delivery_tracker.pending[delivery_id].message
 
             print(

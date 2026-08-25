@@ -41,7 +41,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 })
                 continue
 
-            # Layer 7 — acknowledge a delivery
+            # Layer 7 — acknowledge a delivery (late ACK allowed)
             if action == "ack":
                 delivery_id = message.get("delivery_id")
                 if not delivery_id:
@@ -50,12 +50,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
-                ok = delivery_tracker.ack(
+                status = delivery_tracker.ack(
                     delivery_id,
                     consumer_id=consumer.id,
                 )
                 await websocket.send_json({
-                    "status": "acked" if ok else "unknown_delivery",
+                    "status": status,
                     "delivery_id": delivery_id,
                 })
                 continue

@@ -7,12 +7,12 @@ async def price_handler(event: Event):
     print("received event", event.payload)
     await manager.broadcast(
         {
-            'type': event.type,
+            "type": event.type,
             "data": event.payload,
-            "offset": event.offset
+            "offset": event.offset,
+            "event_id": event.id,
         },
-        topic=event.type
-        
+        topic=event.type,
     )
 
 def register_consumer():
