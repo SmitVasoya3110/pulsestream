@@ -23,6 +23,7 @@ DELIVERY_GUARANTEE = "at-least-once"
 class DeliveryMetrics:
     deliveries_sent: int = 0
     acks: int = 0
+    ack_rejected: int = 0
     retries: int = 0
     ack_timeouts: int = 0
     failed: int = 0
@@ -43,6 +44,7 @@ class DeliveryMetrics:
             "guarantee": DELIVERY_GUARANTEE,
             "deliveries_sent": self.deliveries_sent,
             "acks": self.acks,
+            "ack_rejected": self.ack_rejected,
             "retries": self.retries,
             "ack_timeouts": self.ack_timeouts,
             "failed": self.failed,
@@ -64,6 +66,7 @@ class PendingDelivery:
     message: dict
     sent_at: float
     created_at: float
+    # Current owner — only this consumer may ACK (Section 8)
     consumer_id: Optional[str] = None
     retries: int = 0
     event_id: Optional[str] = None
@@ -166,11 +169,13 @@ class DeliveryTracker:
         """
         Acknowledge a delivery.
 
-        Late-ACK policy:
-        - Still pending → complete (any consumer; ownership may have moved)
-        - Already completed → already_acked
-        - In dead-letter → failed_delivery
-        - Unknown → unknown_delivery
+        Ownership rule (Section 8):
+            ACK accepted only if sender == current delivery owner.
+
+        Other outcomes:
+        - already_acked / failed_delivery / unknown_delivery
+        - not_owner — wrong consumer or orphaned (no current owner)
+        - missing_consumer — caller omitted consumer_id
         """
         if delivery_id in self.completed:
             return "already_acked"
@@ -181,6 +186,20 @@ class DeliveryTracker:
         pending = self.pending.get(delivery_id)
         if pending is None:
             return "unknown_delivery"
+
+        if consumer_id is None:
+            return "missing_consumer"
+
+        # Only the current owner may ACK (after reassignment that is B, not A)
+        if pending.consumer_id is None or consumer_id != pending.consumer_id:
+            self.metrics.ack_rejected += 1
+            print(
+                f"[ACK REJECTED] "
+                f"delivery={delivery_id} "
+                f"sender={consumer_id} "
+                f"owner={pending.consumer_id}"
+            )
+            return "not_owner"
 
         ack_latency_ms = (time.time() - pending.sent_at) * 1000
         self.metrics.total_ack_latency_ms += ack_latency_ms
@@ -197,13 +216,36 @@ class DeliveryTracker:
         print(
             f"[ACK] "
             f"delivery={delivery_id} "
-            f"consumer={consumer_id or pending.consumer_id} "
+            f"consumer={consumer_id} "
             f"topic={pending.topic} "
             f"group={pending.group} "
             f"offset={pending.offset} "
             f"ack_latency_ms={ack_latency_ms:.3f}"
         )
         return "acked"
+
+    def complete_duplicate(self, delivery_id: str) -> bool:
+        """
+        Drop a pending delivery that is already in the processed set
+        (idempotent cleanup on retry path — no ownership required).
+        """
+        pending = self.pending.get(delivery_id)
+        if pending is None:
+            return False
+        if not self.is_processed(pending.group, pending.topic, pending.offset):
+            return False
+
+        self.metrics.duplicates_suppressed += 1
+        self._remove(pending)
+        self.completed.add(delivery_id)
+        print(
+            f"[IDEMPOTENT COMPLETE] "
+            f"delivery={delivery_id} "
+            f"topic={pending.topic} "
+            f"group={pending.group} "
+            f"offset={pending.offset}"
+        )
+        return True
 
     def release_consumer(self, consumer_id: str) -> List[PendingDelivery]:
         """

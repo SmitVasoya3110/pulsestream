@@ -1,20 +1,24 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.core.engine import start_engine
 from app.producers.producer import produce_test_event
-from app.consumers.consumer import register_consumer
+from app.handlers import register_event_handlers
 from app.websocket.routes import router as ws_router
 from app.coordinator.monitor import monitor
 
-app = FastAPI()
-app.include_router(ws_router)
 
-
-@app.on_event("startup")
-async def startup():
-    register_consumer()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    register_event_handlers()
     await start_engine()
     await monitor.start()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(ws_router)
 
 
 @app.get("/test")

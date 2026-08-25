@@ -94,7 +94,7 @@ class CoordinatorMonitor:
             pending.topic,
             pending.offset,
         ):
-            delivery_tracker.ack(pending.delivery_id)
+            delivery_tracker.complete_duplicate(pending.delivery_id)
             return
 
         if pending.retries >= MAX_DELIVERY_RETRIES:
